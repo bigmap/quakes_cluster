@@ -1,0 +1,139 @@
+###comienzo limpiando la lista
+rm(list=ls())
+
+setwd ="C:\\Users\\noaizei\\Documents\\Practicas_R\\Melbourne_peatones"
+
+df_plus[,15:16]=NULL
+
+library(reshape)
+###changes boolean to integer (0,1)
+df_plus$findesemana =as.integer(as.logical(df_plus$findesemana))
+df_plus$diasverano =as.integer(as.logical(df_plus$diasverano))
+df_plus$primerosMes =as.integer(as.logical(df_plus$primerosMes))
+df_plus$ultimosMes =as.integer(as.logical(df_plus$ultimosMes))
+
+####agregamos datos para clusterizar
+findesemana = aggregate (Hourly_Counts ~ Sensor_ID+findesemana ,df_plus,FUN =sum)
+findesemana = cast(findesemana,Sensor_ID ~ findesemana)
+colnames(findesemana) = c("Sensor_ID","FINDE","LABORAL")
+
+####agregamos datos para clusterizar
+primerosMes = aggregate (Hourly_Counts ~ Sensor_ID+primerosMes ,df_plus,FUN =sum)
+primerosMes  = cast(primerosMes ,Sensor_ID ~ primerosMes)
+colnames(primerosMes) = c("Sensor_ID","PRIMEROS","ULTIMOS")
+
+
+####agregamos datos para clusterizar
+ultimosMes = aggregate (Hourly_Counts ~ Sensor_ID+ultimosMes ,df_plus,FUN =sum)
+ultimosMes  = cast(ultimosMes ,Sensor_ID ~ ultimosMes)
+colnames(ultimosMes) = c("Sensor_ID","ultimos_2","primeros_2")
+
+
+####agregamos datos para clusterizar
+ultimosMes = aggregate (Hourly_Counts ~ Sensor_ID+ultimosMes ,df_plus,FUN =sum)
+ultimosMes  = cast(ultimosMes ,Sensor_ID ~ ultimosMes)
+colnames(ultimosMes) = c("Sensor_ID","ultimos_2","primeros_2")
+
+
+####agregamos datos para clusterizar
+diasverano = aggregate (Hourly_Counts ~ Sensor_ID+diasverano  ,df_plus,FUN =sum)
+diasverano  = cast(diasverano  ,Sensor_ID ~ diasverano )
+colnames(diasverano ) = c("Sensor_ID","Verano","Resto_año")
+
+######agregamos datos para clusterizar
+intervaloDia= aggregate (Hourly_Counts ~ Sensor_ID+intervaloDia  ,df_plus,FUN =sum)
+intervaloDia  = cast(intervaloDia  ,Sensor_ID ~ intervaloDia )
+#colnames(diasverano ) = c("Sensor_ID","Verano","Resto_año")
+
+####merge all the values into one df for clustering
+cluster_df = merge(ds,diasverano, by ="Sensor_ID")
+cluster_df = merge(cluster_df,findesemana, by ="Sensor_ID")
+cluster_df = merge(cluster_df,intervaloDia, by ="Sensor_ID")
+cluster_df = merge(cluster_df,primerosMes, by ="Sensor_ID")
+cluster_df = merge(cluster_df,ultimosMes, by ="Sensor_ID")
+
+ids = cluster_df$Sensor_ID
+cluster_df$Sensor_ID =NULL
+cluster_df$lat = (as.integer(gsub('[.]',"",cluster_df$Latitude)))/100000
+cluster_df$lon = (as.integer(gsub('[.]',"",cluster_df$Longitude)))/100000
+
+cluster_df$Latitude =NULL
+cluster_df$Longitude =NULL
+cluster_df[is.na(cluster_df)] =0
+
+summary(cluster_df)
+
+
+
+
+
+library(cluster)
+####normaliza el cluster
+cluster_M = scale(cluster_df)
+
+
+####me dice cuantos clusteres usar
+wss <- (nrow(cluster_M)-1)*sum(apply(cluster_M, 2,var))
+for (i in 2:15) wss[i] <- sum(kmeans(cluster_M, 
+                                     centers=i)$withinss)
+plot(1:15, wss, type="b", xlab="Number of Clusters",
+     ylab="Within groups sum of squares")
+
+###esto me ha determinado que tengo entre 4 y 3 clusters para ejecutar
+
+# K-Means Cluster Analysis
+fit <- kmeans(cluster_M, 3) # 5 cluster solution
+# get cluster means 
+aggregate(cluster_M,by=list(fit$cluster),FUN=mean)
+# append cluster assignment
+cluster_M <- data.frame(cluster_M, fit$cluster)
+
+
+clusplot(cluster_M, fit$cluster, color=TRUE, shade=TRUE, 
+         labels=2, lines=0)
+
+library(fpc)
+plotcluster(cluster_M, fit$cluster)
+
+
+library(leaflet)
+###primero metemos el campo de cluster en el datases de sensores
+
+cluster_df$cluster = fit$cluster
+#d2fbd4,#a5dbc2,#7bbcb0,#559c9e,#3a7c89,#235d72,#123f5a
+#fef6b5,#ffdd9a,#ffc285,#ffa679,#fa8a76,#f16d7a,#e15383
+#f9ddda,#f2b9c4,#e597b9,#ce78b3,#ad5fad,#834ba0,#573b88
+
+shop =read.csv("C:\\Users\\noaizei\\Documents\\Practicas_R\\Melbourne_peatones\\Shop.csv",header =TRUE, sep =",")
+leisure =read.csv("C:\\Users\\noaizei\\Documents\\Practicas_R\\Melbourne_peatones\\Leisure.csv",header =TRUE, sep =",")
+Cuisine =read.csv("C:\\Users\\noaizei\\Documents\\Practicas_R\\Melbourne_peatones\\Cuisine.csv",header =TRUE, sep =",")
+
+#### ahora metemos el cluster con los sensores clasificados
+map = leaflet() 
+map = setView (map, lng =144.963140, lat=-37.800411, zoom = 13) 
+  map = addProviderTiles(map, providers$CartoDB.DarkMatter)
+  map =addCircleMarkers(map, data = cluster_df[cluster_df$cluster==1,], ~lon, ~lat, 
+                           popup = ~as.character(cluster), label = ~as.character(cluster), 
+                           radius = 10,color = "#7bbcb0", group ="Cluster 1")
+  map =addCircleMarkers(map, data = cluster_df[cluster_df$cluster==2,], ~lon, ~lat, 
+                 popup = ~as.character(cluster), label = ~as.character(cluster), 
+                 radius = 10,color = "#ffa679", group ="Cluster 2")
+  map =addCircleMarkers(map, data = cluster_df[cluster_df$cluster==3,], ~lon, ~lat, 
+                 popup = ~as.character(cluster), label = ~as.character(cluster), 
+                 radius = 10,color = "#ce78b3", group ="Cluster 3")
+  map =addCircleMarkers(map, data = cluster_df[cluster_df$cluster==3,], ~lon, ~lat, 
+                        popup = ~as.character(cluster), label = ~as.character(cluster), 
+                        radius = 10,color = "#ce78b3", group ="Cluster 3")
+  map =addCircles(map, data = shop, ~X, ~Y, radius = 10,color = "blue", group ="Tiendas")
+  map =addCircles(map, data = leisure, ~X, ~Y, radius = 10,color = "green", group ="Ocio")
+  map =addCircles(map, data = Cuisine, ~X, ~Y, radius = 10,color = "red", group ="Gastronomia")
+    #map =addGeoJSON(map, "C:\\Users\\noaizei\\Documents\\Practicas_R\\Melbourne_peatones\\Leisure_selected.geojson", group ="Ocio", color ="blue")
+    map =addLayersControl(map,baseGroups = c("Carto"),
+                     overlayGroups = c("Cluster 1","Cluster 2","Cluster 3","Tiendas","Ocio","Gastronomia"),
+                     options = layersControlOptions(collapsed = FALSE)
+    )
+map
+  
+####now lets plot all the variables to see how each one affects the cluster
+
+
